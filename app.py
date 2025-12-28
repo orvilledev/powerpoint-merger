@@ -33,7 +33,7 @@ def is_title_slide(text, slide_index):
         return True
     return False
 
-def create_formatted_slide(target_presentation, text, is_title):
+def create_formatted_slide(target_presentation, text, is_title, title_color, verse_color):
     """Create a new slide with formatted text"""
     # Use blank layout
     blank_slide_layout = target_presentation.slide_layouts[6]
@@ -83,11 +83,11 @@ def create_formatted_slide(target_presentation, text, is_title):
     # Set font size: 72pt for titles (all caps), 65pt for verses
     if is_all_caps:
         font.size = Pt(72)  # Font size 72 for titles
-        font.color.rgb = RGBColor(255, 255, 0)  # Yellow
+        font.color.rgb = RGBColor(*title_color)  # Use selected title color
         font.bold = True  # Bold for all caps
     else:
         font.size = Pt(65)  # Font size 65 for verses
-        font.color.rgb = RGBColor(255, 255, 255)  # White
+        font.color.rgb = RGBColor(*verse_color)  # Use selected verse color
         font.bold = False
     
     return slide
@@ -97,6 +97,30 @@ if 'file_order' not in st.session_state:
     st.session_state.file_order = []
 if 'uploaded_files_dict' not in st.session_state:
     st.session_state.uploaded_files_dict = {}
+if 'title_color' not in st.session_state:
+    st.session_state.title_color = [255, 255, 0]  # Default yellow
+if 'verse_color' not in st.session_state:
+    st.session_state.verse_color = [255, 255, 255]  # Default white
+
+# Color selection
+st.subheader("Color Settings")
+col1, col2 = st.columns(2)
+
+with col1:
+    # Convert RGB to hex for color picker
+    title_hex = f"#{st.session_state.title_color[0]:02x}{st.session_state.title_color[1]:02x}{st.session_state.title_color[2]:02x}".upper()
+    title_color = st.color_picker("Title Color (All Caps)", title_hex, key="title_color_picker")
+    # Convert hex to RGB
+    title_color_rgb = tuple(int(title_color[i:i+2], 16) for i in (1, 3, 5))
+    st.session_state.title_color = list(title_color_rgb)
+
+with col2:
+    # Convert RGB to hex for color picker
+    verse_hex = f"#{st.session_state.verse_color[0]:02x}{st.session_state.verse_color[1]:02x}{st.session_state.verse_color[2]:02x}".upper()
+    verse_color = st.color_picker("Verse Color", verse_hex, key="verse_color_picker")
+    # Convert hex to RGB
+    verse_color_rgb = tuple(int(verse_color[i:i+2], 16) for i in (1, 3, 5))
+    st.session_state.verse_color = list(verse_color_rgb)
 
 uploaded_files = st.file_uploader(
     "Upload PowerPoint files",
@@ -188,7 +212,7 @@ if ordered_files and st.button("Merge PowerPoints"):
                     is_title = is_title_slide(text, slide_index)
                     
                     # Create formatted slide
-                    create_formatted_slide(merged_presentation, text, is_title)
+                    create_formatted_slide(merged_presentation, text, is_title, st.session_state.title_color, st.session_state.verse_color)
                     slide_index += 1
         
         output = BytesIO()
