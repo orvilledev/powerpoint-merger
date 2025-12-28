@@ -76,16 +76,17 @@ def create_formatted_slide(target_presentation, text, is_title):
     run.text = text  # Preserve original case
     font = run.font
     font.name = 'Arial'
-    font.size = Pt(72)  # Font size 72
     
     # Check if text is all uppercase (all caps)
     is_all_caps = text.isupper() and any(c.isalpha() for c in text)
     
-    # Set text color: yellow for all caps, white for others
+    # Set font size: 72pt for titles (all caps), 65pt for verses
     if is_all_caps:
+        font.size = Pt(72)  # Font size 72 for titles
         font.color.rgb = RGBColor(255, 255, 0)  # Yellow
         font.bold = True  # Bold for all caps
     else:
+        font.size = Pt(65)  # Font size 65 for verses
         font.color.rgb = RGBColor(255, 255, 255)  # White
         font.bold = False
     
