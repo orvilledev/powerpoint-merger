@@ -9,6 +9,28 @@ from PIL import Image
 
 st.set_page_config(page_title="PowerPoint Merger", layout="centered")
 
+# Custom CSS to style file uploader buttons to red
+st.markdown("""
+<style>
+    /* Style file uploader "Browse files" buttons to be red */
+    div[data-testid="stFileUploader"] button {
+        background-color: #FF0000 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 0.25rem !important;
+    }
+    div[data-testid="stFileUploader"] button:hover {
+        background-color: #CC0000 !important;
+    }
+    div[data-testid="stFileUploader"] button:focus {
+        background-color: #CC0000 !important;
+    }
+    div[data-testid="stFileUploader"] button:active {
+        background-color: #AA0000 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("📊 PowerPoint Merger")
 
 def resize_image_to_1920x1080(image_bytes):
