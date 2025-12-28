@@ -5,10 +5,35 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from io import BytesIO
+from PIL import Image
 
 st.set_page_config(page_title="PowerPoint Merger", layout="centered")
 
 st.title("📊 PowerPoint Merger")
+
+def resize_image_to_1920x1080(image_bytes):
+    """Resize image to 1920x1080 pixels"""
+    try:
+        # Open image from bytes
+        img = Image.open(BytesIO(image_bytes))
+        # Resize to 1920x1080 (use LANCZOS resampling for quality)
+        try:
+            # Try newer API first
+            resized_img = img.resize((1920, 1080), Image.Resampling.LANCZOS)
+        except AttributeError:
+            # Fallback for older Pillow versions
+            resized_img = img.resize((1920, 1080), Image.LANCZOS)
+        # Convert to RGB if necessary (for JPEG compatibility)
+        if resized_img.mode != 'RGB':
+            resized_img = resized_img.convert('RGB')
+        # Save to bytes
+        output = BytesIO()
+        resized_img.save(output, format='PNG')
+        output.seek(0)
+        return output.getvalue()
+    except Exception as e:
+        # If resizing fails, return original
+        return image_bytes
 
 def extract_text_from_slide(slide):
     """Extract all text from a slide"""
@@ -23,44 +48,52 @@ def extract_text_from_slide(slide):
                     text_content.append(para_text.strip())
     return "\n".join(text_content)
 
-def is_title_slide(text, slide_index):
-    """Determine if a slide is a title slide (first slide or short text)"""
-    # First slide is always a title
-    if slide_index == 0:
-        return True
-    # Short text (less than 100 chars) is likely a title
-    if len(text) < 100:
-        return True
-    return False
+def is_all_caps(text):
+    """Check if text is all uppercase (all caps)"""
+    return text.isupper() and any(c.isalpha() for c in text)
 
-def create_formatted_slide(target_presentation, text, is_title, title_color, verse_color, title_font_size, verse_font_size, title_font, verse_font):
+def create_formatted_slide(target_presentation, text, is_title, title_color, verse_color, title_font_size, verse_font_size, title_font, verse_font, background_image=None):
     """Create a new slide with formatted text"""
     # Use blank layout
     blank_slide_layout = target_presentation.slide_layouts[6]
     slide = target_presentation.slides.add_slide(blank_slide_layout)
     
-    # Set black background
+    # Get slide dimensions
+    slide_width = target_presentation.slide_width
+    slide_height = target_presentation.slide_height
+    
+    # Add background image if provided (add it first so text appears on top)
+    if background_image:
+        try:
+            # Add image to cover entire slide
+            slide.shapes.add_picture(
+                BytesIO(background_image),
+                0,  # left
+                0,  # top
+                slide_width,  # width
+                slide_height  # height
+            )
+        except Exception:
+            pass
+    
+    # Set black background (if no image, or as fallback)
     background = slide.background
     fill = background.fill
     fill.solid()
     fill.fore_color.rgb = RGBColor(0, 0, 0)  # Black
     
-    # Get slide dimensions
-    slide_width = target_presentation.slide_width
-    slide_height = target_presentation.slide_height
-    
-    # Create text box centered on slide
-    width = Inches(10)
-    height = Inches(7)
-    left = (slide_width - width) / 2  # Center horizontally
+    # Create text box stretching from left to right edge
+    width = slide_width  # Full width of slide
+    height = Inches(7)  # Keep reasonable height
+    left = 0  # Start from leftmost edge
     top = (slide_height - height) / 2  # Center vertically
     
     textbox = slide.shapes.add_textbox(left, top, width, height)
     text_frame = textbox.text_frame
     text_frame.word_wrap = True
     text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE  # Middle vertical alignment
-    text_frame.margin_left = Inches(0.5)
-    text_frame.margin_right = Inches(0.5)
+    text_frame.margin_left = Inches(0.5)  # Small padding from left edge
+    text_frame.margin_right = Inches(0.5)  # Small padding from right edge
     text_frame.margin_top = Inches(0.5)
     text_frame.margin_bottom = Inches(0.5)
     
@@ -79,12 +112,12 @@ def create_formatted_slide(target_presentation, text, is_title, title_color, ver
     # Check if text is all uppercase (all caps)
     is_all_caps = text.isupper() and any(c.isalpha() for c in text)
     
-    # Set font properties: use selected settings for titles (all caps) and verses
-    if is_all_caps:
+    # Set font properties: use title settings if it's marked as title OR if it's all caps
+    if is_title or is_all_caps:
         font.name = title_font  # Use selected title font
         font.size = Pt(title_font_size)  # Use selected title font size
         font.color.rgb = RGBColor(*title_color)  # Use selected title color
-        font.bold = True  # Bold for all caps
+        font.bold = True  # Bold for titles
     else:
         font.name = verse_font  # Use selected verse font
         font.size = Pt(verse_font_size)  # Use selected verse font size
@@ -110,6 +143,8 @@ if 'title_font' not in st.session_state:
     st.session_state.title_font = 'Arial'  # Default Arial
 if 'verse_font' not in st.session_state:
     st.session_state.verse_font = 'Arial'  # Default Arial
+if 'background_image' not in st.session_state:
+    st.session_state.background_image = None
 
 # Common fonts compatible across all systems
 COMMON_FONTS = [
@@ -167,11 +202,35 @@ with font_family_col2:
     verse_font = st.selectbox("Verse Font", COMMON_FONTS, index=COMMON_FONTS.index(st.session_state.verse_font) if st.session_state.verse_font in COMMON_FONTS else 0, key="verse_font_select")
     st.session_state.verse_font = verse_font
 
+st.markdown("## Upload PowerPoint Files")
 uploaded_files = st.file_uploader(
     "Upload PowerPoint files",
     type=["pptx"],
     accept_multiple_files=True
 )
+
+st.subheader("Background Image (Optional)")
+background_image_file = st.file_uploader(
+    "Upload background image (will be applied to all slides)",
+    type=["png", "jpg", "jpeg", "gif", "bmp"],
+    key="background_image_uploader"
+)
+
+if background_image_file:
+    # Read image data
+    image_data = background_image_file.read()
+    # Resize to 1920x1080
+    resized_image_data = resize_image_to_1920x1080(image_data)
+    st.session_state.background_image = resized_image_data
+    st.success(f"✅ Background image loaded and resized to 1920x1080: {background_image_file.name}")
+    # Display image preview
+    background_image_file.seek(0)  # Reset file pointer
+    st.image(background_image_file, width=300)
+    if st.button("Remove Background Image", key="remove_bg_image"):
+        st.session_state.background_image = None
+        st.rerun()
+else:
+    st.session_state.background_image = None
 
 # Update session state when new files are uploaded
 if uploaded_files:
@@ -247,17 +306,32 @@ if ordered_files and st.button("Merge PowerPoints"):
         
         for ppt_file in ordered_files:
             prs = Presentation(ppt_file)
+            first_slide_found = False  # Track if we've found the first slide with text in this file
+            first_all_caps_found = False  # Track if we've found the first all-caps slide in this file
             
             for slide in prs.slides:
                 # Extract text from slide
                 text = extract_text_from_slide(slide)
                 
                 if text:  # Only create slide if there's text
-                    # Determine if it's a title slide
-                    is_title = is_title_slide(text, slide_index)
+                    # Check if text is all caps
+                    is_all_caps_text = is_all_caps(text)
+                    
+                    # Determine if it's a title slide:
+                    # - First slide of each PowerPoint file (regardless of caps)
+                    # - OR first all-caps slide in each PowerPoint file
+                    is_title = False
+                    if not first_slide_found:
+                        # First slide with text in this file is always a title
+                        is_title = True
+                        first_slide_found = True
+                    elif is_all_caps_text and not first_all_caps_found:
+                        # First all-caps slide in this file is also a title
+                        is_title = True
+                        first_all_caps_found = True
                     
                     # Create formatted slide
-                    create_formatted_slide(merged_presentation, text, is_title, st.session_state.title_color, st.session_state.verse_color, st.session_state.title_font_size, st.session_state.verse_font_size, st.session_state.title_font, st.session_state.verse_font)
+                    create_formatted_slide(merged_presentation, text, is_title, st.session_state.title_color, st.session_state.verse_color, st.session_state.title_font_size, st.session_state.verse_font_size, st.session_state.title_font, st.session_state.verse_font, st.session_state.background_image)
                     slide_index += 1
         
         output = BytesIO()
