@@ -91,22 +91,83 @@ def create_formatted_slide(target_presentation, text, is_title):
     
     return slide
 
+# Initialize session state for file ordering
+if 'file_order' not in st.session_state:
+    st.session_state.file_order = []
+if 'uploaded_files_dict' not in st.session_state:
+    st.session_state.uploaded_files_dict = {}
+
 uploaded_files = st.file_uploader(
     "Upload PowerPoint files",
     type=["pptx"],
     accept_multiple_files=True
 )
 
-if uploaded_files and st.button("Merge PowerPoints"):
+# Update session state when new files are uploaded
+if uploaded_files:
+    # Create a dictionary to track files by name
+    new_files_dict = {file.name: file for file in uploaded_files}
+    
+    # Add new files to the order (if not already present)
+    for file in uploaded_files:
+        if file.name not in st.session_state.file_order:
+            st.session_state.file_order.append(file.name)
+    
+    # Remove files that are no longer in the upload
+    st.session_state.file_order = [name for name in st.session_state.file_order if name in new_files_dict]
+    
+    # Update the files dictionary
+    st.session_state.uploaded_files_dict = new_files_dict
+
+# Display file reordering interface
+if st.session_state.file_order:
+    st.subheader("Arrange Files (use buttons to reorder)")
+    
+    # Create a list to store new order
+    new_order = st.session_state.file_order.copy()
+    
+    # Display files with reordering controls
+    for i, file_name in enumerate(st.session_state.file_order):
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+        
+        with col1:
+            st.write(f"**{i+1}.** {file_name}")
+        
+        with col2:
+            if st.button("⬆️ Up", key=f"up_{i}", disabled=(i == 0)):
+                if i > 0:
+                    new_order[i], new_order[i-1] = new_order[i-1], new_order[i]
+                    st.session_state.file_order = new_order
+                    st.rerun()
+        
+        with col3:
+            if st.button("⬇️ Down", key=f"down_{i}", disabled=(i == len(st.session_state.file_order) - 1)):
+                if i < len(new_order) - 1:
+                    new_order[i], new_order[i+1] = new_order[i+1], new_order[i]
+                    st.session_state.file_order = new_order
+                    st.rerun()
+        
+        with col4:
+            if st.button("🗑️ Remove", key=f"remove_{i}"):
+                new_order.remove(file_name)
+                st.session_state.file_order = new_order
+                if file_name in st.session_state.uploaded_files_dict:
+                    del st.session_state.uploaded_files_dict[file_name]
+                st.rerun()
+
+# Get ordered list of files
+ordered_files = [st.session_state.uploaded_files_dict[name] for name in st.session_state.file_order if name in st.session_state.uploaded_files_dict]
+
+if ordered_files and st.button("Merge PowerPoints"):
     try:
         merged_presentation = Presentation()
         
         # Set slide dimensions to match first presentation if available
-        if uploaded_files:
-            first_prs = Presentation(uploaded_files[0])
+        if ordered_files:
+            first_prs = Presentation(ordered_files[0])
             merged_presentation.slide_width = first_prs.slide_width
             merged_presentation.slide_height = first_prs.slide_height
-            uploaded_files[0].seek(0)  # Reset file pointer
+            ordered_files[0].seek(0)  # Reset file pointer
         
         # Remove default empty slide
         if merged_presentation.slides:
@@ -114,7 +175,7 @@ if uploaded_files and st.button("Merge PowerPoints"):
         
         slide_index = 0
         
-        for ppt_file in uploaded_files:
+        for ppt_file in ordered_files:
             prs = Presentation(ppt_file)
             
             for slide in prs.slides:
