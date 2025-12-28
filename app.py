@@ -33,7 +33,7 @@ def is_title_slide(text, slide_index):
         return True
     return False
 
-def create_formatted_slide(target_presentation, text, is_title, title_color, verse_color):
+def create_formatted_slide(target_presentation, text, is_title, title_color, verse_color, title_font_size, verse_font_size, title_font, verse_font):
     """Create a new slide with formatted text"""
     # Use blank layout
     blank_slide_layout = target_presentation.slide_layouts[6]
@@ -75,18 +75,19 @@ def create_formatted_slide(target_presentation, text, is_title, title_color, ver
     run = paragraph.add_run()
     run.text = text  # Preserve original case
     font = run.font
-    font.name = 'Arial'
     
     # Check if text is all uppercase (all caps)
     is_all_caps = text.isupper() and any(c.isalpha() for c in text)
     
-    # Set font size: 72pt for titles (all caps), 65pt for verses
+    # Set font properties: use selected settings for titles (all caps) and verses
     if is_all_caps:
-        font.size = Pt(72)  # Font size 72 for titles
+        font.name = title_font  # Use selected title font
+        font.size = Pt(title_font_size)  # Use selected title font size
         font.color.rgb = RGBColor(*title_color)  # Use selected title color
         font.bold = True  # Bold for all caps
     else:
-        font.size = Pt(65)  # Font size 65 for verses
+        font.name = verse_font  # Use selected verse font
+        font.size = Pt(verse_font_size)  # Use selected verse font size
         font.color.rgb = RGBColor(*verse_color)  # Use selected verse color
         font.bold = False
     
@@ -101,8 +102,30 @@ if 'title_color' not in st.session_state:
     st.session_state.title_color = [255, 255, 0]  # Default yellow
 if 'verse_color' not in st.session_state:
     st.session_state.verse_color = [255, 255, 255]  # Default white
+if 'title_font_size' not in st.session_state:
+    st.session_state.title_font_size = 72  # Default 72pt
+if 'verse_font_size' not in st.session_state:
+    st.session_state.verse_font_size = 65  # Default 65pt
+if 'title_font' not in st.session_state:
+    st.session_state.title_font = 'Arial'  # Default Arial
+if 'verse_font' not in st.session_state:
+    st.session_state.verse_font = 'Arial'  # Default Arial
 
-# Color selection
+# Common fonts compatible across all systems
+COMMON_FONTS = [
+    'Arial',
+    'Times New Roman',
+    'Calibri',
+    'Verdana',
+    'Georgia',
+    'Tahoma',
+    'Trebuchet MS',
+    'Courier New',
+    'Comic Sans MS',
+    'Impact'
+]
+
+# Color and Font Settings
 st.subheader("Color Settings")
 col1, col2 = st.columns(2)
 
@@ -121,6 +144,28 @@ with col2:
     # Convert hex to RGB
     verse_color_rgb = tuple(int(verse_color[i:i+2], 16) for i in (1, 3, 5))
     st.session_state.verse_color = list(verse_color_rgb)
+
+st.subheader("Font Size Settings")
+font_col1, font_col2 = st.columns(2)
+
+with font_col1:
+    title_font_size = st.number_input("Title Font Size (pt)", min_value=10, max_value=200, value=st.session_state.title_font_size, step=1, key="title_font_size_input")
+    st.session_state.title_font_size = int(title_font_size)
+
+with font_col2:
+    verse_font_size = st.number_input("Verse Font Size (pt)", min_value=10, max_value=200, value=st.session_state.verse_font_size, step=1, key="verse_font_size_input")
+    st.session_state.verse_font_size = int(verse_font_size)
+
+st.subheader("Font Family Settings")
+font_family_col1, font_family_col2 = st.columns(2)
+
+with font_family_col1:
+    title_font = st.selectbox("Title Font", COMMON_FONTS, index=COMMON_FONTS.index(st.session_state.title_font) if st.session_state.title_font in COMMON_FONTS else 0, key="title_font_select")
+    st.session_state.title_font = title_font
+
+with font_family_col2:
+    verse_font = st.selectbox("Verse Font", COMMON_FONTS, index=COMMON_FONTS.index(st.session_state.verse_font) if st.session_state.verse_font in COMMON_FONTS else 0, key="verse_font_select")
+    st.session_state.verse_font = verse_font
 
 uploaded_files = st.file_uploader(
     "Upload PowerPoint files",
@@ -212,7 +257,7 @@ if ordered_files and st.button("Merge PowerPoints"):
                     is_title = is_title_slide(text, slide_index)
                     
                     # Create formatted slide
-                    create_formatted_slide(merged_presentation, text, is_title, st.session_state.title_color, st.session_state.verse_color)
+                    create_formatted_slide(merged_presentation, text, is_title, st.session_state.title_color, st.session_state.verse_color, st.session_state.title_font_size, st.session_state.verse_font_size, st.session_state.title_font, st.session_state.verse_font)
                     slide_index += 1
         
         output = BytesIO()
