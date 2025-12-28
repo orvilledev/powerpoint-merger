@@ -52,6 +52,44 @@ def is_all_caps(text):
     """Check if text is all uppercase (all caps)"""
     return text.isupper() and any(c.isalpha() for c in text)
 
+def parse_txt_file(txt_content):
+    """Parse .txt file and extract slides with titles and verses"""
+    lines = txt_content.decode('utf-8').split('\n')
+    slides = []
+    current_slide = {'title': None, 'verses': []}
+    
+    for line in lines:
+        line = line.strip()
+        
+        # Check if line is a title
+        if line.upper().startswith('TITLE:'):
+            # If we have content in current slide, save it
+            if current_slide['title'] or current_slide['verses']:
+                slides.append(current_slide)
+            
+            # Extract title text (handle both TITLE:text and TITLE:"text" formats)
+            title_text = line[6:].strip()  # Remove "TITLE:"
+            if title_text.startswith('"') and title_text.endswith('"'):
+                title_text = title_text[1:-1]  # Remove quotes
+            
+            # Start new slide with this title
+            current_slide = {'title': title_text, 'verses': []}
+        elif line == '':
+            # Blank line - if we have content, save current slide and start new one
+            if current_slide['title'] or current_slide['verses']:
+                slides.append(current_slide)
+                current_slide = {'title': None, 'verses': []}
+        else:
+            # Regular verse line
+            if line:  # Only add non-empty lines
+                current_slide['verses'].append(line)
+    
+    # Add the last slide if it has content
+    if current_slide['title'] or current_slide['verses']:
+        slides.append(current_slide)
+    
+    return slides
+
 def create_formatted_slide(target_presentation, text, is_title, title_color, verse_color, title_font_size, verse_font_size, title_font, verse_font, background_image=None):
     """Create a new slide with formatted text"""
     # Use blank layout
@@ -145,6 +183,8 @@ if 'verse_font' not in st.session_state:
     st.session_state.verse_font = 'Arial'  # Default Arial
 if 'background_image' not in st.session_state:
     st.session_state.background_image = None
+if 'txt_files_dict' not in st.session_state:
+    st.session_state.txt_files_dict = {}
 
 # Common fonts compatible across all systems
 COMMON_FONTS = [
@@ -206,7 +246,16 @@ st.markdown("## Upload PowerPoint Files")
 uploaded_files = st.file_uploader(
     "Upload PowerPoint files",
     type=["pptx"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key="pptx_file_uploader"
+)
+
+st.markdown("## Upload Text Files (Optional)")
+uploaded_txt_files = st.file_uploader(
+    "Upload .txt files with TITLE: format",
+    type=["txt"],
+    accept_multiple_files=True,
+    key="txt_file_uploader"
 )
 
 st.subheader("Background Image (Optional)")
@@ -233,70 +282,131 @@ else:
     st.session_state.background_image = None
 
 # Update session state when new files are uploaded
-if uploaded_files:
-    # Create a dictionary to track files by name
-    new_files_dict = {file.name: file for file in uploaded_files}
-    
-    # Add new files to the order (if not already present)
+# Store file bytes in session state so files persist across reruns
+if uploaded_files is not None and len(uploaded_files) > 0:
+    # Process newly uploaded files
     for file in uploaded_files:
+        # Read ALL file bytes and store in session state
+        # Make sure we read from the beginning
+        file.seek(0)
+        file_bytes = file.read()
+        # Create a copy of the bytes to ensure we have all the data
+        file_bytes = bytes(file_bytes)
+        
+        # Store file info: name and bytes
+        file_info = {
+            'name': file.name,
+            'bytes': file_bytes,
+            'type': 'pptx'
+        }
+        st.session_state.uploaded_files_dict[file.name] = file_info
+        
+        # Add to order if not already present
         if file.name not in st.session_state.file_order:
             st.session_state.file_order.append(file.name)
     
-    # Remove files that are no longer in the upload
-    st.session_state.file_order = [name for name in st.session_state.file_order if name in new_files_dict]
+    # Don't automatically remove files - let the user remove them via the Remove button
+    # Files persist in session state even if not in current upload
+    # This allows multiple files to be uploaded and kept
+
+# Also handle txt files in the ordering
+# Store file bytes in session state so files persist across reruns
+if uploaded_txt_files is not None and len(uploaded_txt_files) > 0:
+    # Process newly uploaded txt files
+    for file in uploaded_txt_files:
+        # Read file bytes and store in session state
+        file.seek(0)  # Reset file pointer
+        file_bytes = file.read()
+        # Create a copy of the bytes to ensure we have all the data
+        file_bytes = bytes(file_bytes)
+        
+        # Store file info: name and bytes
+        file_info = {
+            'name': file.name,
+            'bytes': file_bytes,
+            'type': 'txt'
+        }
+        st.session_state.txt_files_dict[file.name] = file_info
+        
+        # Add to order if not already present
+        if file.name not in st.session_state.file_order:
+            st.session_state.file_order.append(file.name)
     
-    # Update the files dictionary
-    st.session_state.uploaded_files_dict = new_files_dict
+    # Don't automatically remove files - let the user remove them via the Remove button
+    # Files persist in session state even if not in current upload
 
 # Display file reordering interface
 if st.session_state.file_order:
     st.subheader("Arrange Files (use buttons to reorder)")
     
-    # Create a list to store new order
-    new_order = st.session_state.file_order.copy()
+    # Filter to only show valid files (remove any manual slide references)
+    valid_file_order = [item_id for item_id in st.session_state.file_order 
+                       if not item_id.startswith("MANUAL_SLIDE_") and 
+                       (item_id in st.session_state.uploaded_files_dict or item_id in st.session_state.txt_files_dict)]
+    
+    # Update file_order to remove invalid references
+    if len(valid_file_order) != len(st.session_state.file_order):
+        st.session_state.file_order = valid_file_order
     
     # Display files with reordering controls
-    for i, file_name in enumerate(st.session_state.file_order):
+    for i, item_id in enumerate(valid_file_order):
         col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
         
         with col1:
-            st.write(f"**{i+1}.** {file_name}")
+            st.write(f"**{i+1}.** {item_id}")
         
         with col2:
             if st.button("⬆️ Up", key=f"up_{i}", disabled=(i == 0)):
                 if i > 0:
-                    new_order[i], new_order[i-1] = new_order[i-1], new_order[i]
-                    st.session_state.file_order = new_order
+                    valid_file_order[i], valid_file_order[i-1] = valid_file_order[i-1], valid_file_order[i]
+                    st.session_state.file_order = valid_file_order
                     st.rerun()
         
         with col3:
-            if st.button("⬇️ Down", key=f"down_{i}", disabled=(i == len(st.session_state.file_order) - 1)):
-                if i < len(new_order) - 1:
-                    new_order[i], new_order[i+1] = new_order[i+1], new_order[i]
-                    st.session_state.file_order = new_order
+            if st.button("⬇️ Down", key=f"down_{i}", disabled=(i == len(valid_file_order) - 1)):
+                if i < len(valid_file_order) - 1:
+                    valid_file_order[i], valid_file_order[i+1] = valid_file_order[i+1], valid_file_order[i]
+                    st.session_state.file_order = valid_file_order
                     st.rerun()
         
         with col4:
             if st.button("🗑️ Remove", key=f"remove_{i}"):
-                new_order.remove(file_name)
-                st.session_state.file_order = new_order
-                if file_name in st.session_state.uploaded_files_dict:
-                    del st.session_state.uploaded_files_dict[file_name]
+                valid_file_order.remove(item_id)
+                st.session_state.file_order = valid_file_order
+                if item_id in st.session_state.uploaded_files_dict:
+                    del st.session_state.uploaded_files_dict[item_id]
+                elif item_id in st.session_state.txt_files_dict:
+                    del st.session_state.txt_files_dict[item_id]
                 st.rerun()
 
-# Get ordered list of files
-ordered_files = [st.session_state.uploaded_files_dict[name] for name in st.session_state.file_order if name in st.session_state.uploaded_files_dict]
+# Get ordered list of files (both pptx and txt)
+ordered_items = []
+for item_id in st.session_state.file_order:
+    if item_id in st.session_state.uploaded_files_dict:
+        # Get file bytes from session state and create BytesIO object
+        file_info = st.session_state.uploaded_files_dict[item_id]
+        # Create a fresh BytesIO object for each file and ensure it's at the start
+        file_bytes_io = BytesIO(file_info['bytes'])
+        file_bytes_io.seek(0)  # Ensure we're at the start
+        ordered_items.append(('pptx', file_bytes_io))
+    elif item_id in st.session_state.txt_files_dict:
+        # Get file bytes from session state and create BytesIO object
+        file_info = st.session_state.txt_files_dict[item_id]
+        file_bytes_io = BytesIO(file_info['bytes'])
+        file_bytes_io.seek(0)  # Ensure we're at the start
+        ordered_items.append(('txt', file_bytes_io))
 
-if ordered_files and st.button("Merge PowerPoints"):
+# Check if we have any content to merge
+has_content = len(ordered_items) > 0
+
+if has_content and st.button("Merge PowerPoints"):
     try:
         merged_presentation = Presentation()
         
-        # Set slide dimensions to match first presentation if available
-        if ordered_files:
-            first_prs = Presentation(ordered_files[0])
-            merged_presentation.slide_width = first_prs.slide_width
-            merged_presentation.slide_height = first_prs.slide_height
-            ordered_files[0].seek(0)  # Reset file pointer
+        # Set slide dimensions to 16:9 Widescreen aspect ratio
+        # Width: 13.33 inches, Height: 7.5 inches
+        merged_presentation.slide_width = Inches(13.33)  # 16:9 Widescreen width
+        merged_presentation.slide_height = Inches(7.5)  # 16:9 Widescreen height
         
         # Remove default empty slide
         if merged_presentation.slides:
@@ -304,35 +414,57 @@ if ordered_files and st.button("Merge PowerPoints"):
         
         slide_index = 0
         
-        for ppt_file in ordered_files:
-            prs = Presentation(ppt_file)
-            first_slide_found = False  # Track if we've found the first slide with text in this file
-            first_all_caps_found = False  # Track if we've found the first all-caps slide in this file
-            
-            for slide in prs.slides:
-                # Extract text from slide
-                text = extract_text_from_slide(slide)
+        for item_type, item_data in ordered_items:
+            if item_type == 'pptx':
+                # Process PowerPoint file
+                # Ensure BytesIO is at the start before creating Presentation
+                item_data.seek(0)
+                prs = Presentation(item_data)
+                first_slide_found = False  # Track if we've found the first slide with text in this file
+                first_all_caps_found = False  # Track if we've found the first all-caps slide in this file
                 
-                if text:  # Only create slide if there's text
-                    # Check if text is all caps
-                    is_all_caps_text = is_all_caps(text)
+                for slide in prs.slides:
+                    # Extract text from slide
+                    text = extract_text_from_slide(slide)
                     
-                    # Determine if it's a title slide:
-                    # - First slide of each PowerPoint file (regardless of caps)
-                    # - OR first all-caps slide in each PowerPoint file
-                    is_title = False
-                    if not first_slide_found:
-                        # First slide with text in this file is always a title
-                        is_title = True
-                        first_slide_found = True
-                    elif is_all_caps_text and not first_all_caps_found:
-                        # First all-caps slide in this file is also a title
-                        is_title = True
-                        first_all_caps_found = True
+                    if text:  # Only create slide if there's text
+                        # Check if text is all caps
+                        is_all_caps_text = is_all_caps(text)
+                        
+                        # Determine if it's a title slide:
+                        # - First slide of each PowerPoint file (regardless of caps)
+                        # - OR first all-caps slide in each PowerPoint file
+                        is_title = False
+                        if not first_slide_found:
+                            # First slide with text in this file is always a title
+                            is_title = True
+                            first_slide_found = True
+                        elif is_all_caps_text and not first_all_caps_found:
+                            # First all-caps slide in this file is also a title
+                            is_title = True
+                            first_all_caps_found = True
+                        
+                        # Create formatted slide
+                        create_formatted_slide(merged_presentation, text, is_title, st.session_state.title_color, st.session_state.verse_color, st.session_state.title_font_size, st.session_state.verse_font_size, st.session_state.title_font, st.session_state.verse_font, st.session_state.background_image)
+                        slide_index += 1
+            
+            elif item_type == 'txt':
+                # Process text file
+                item_data.seek(0)  # Ensure we're at the start
+                txt_content = item_data.read()
+                slides = parse_txt_file(txt_content)
+                
+                for slide_data in slides:
+                    # Create title slide if title exists
+                    if slide_data['title']:
+                        create_formatted_slide(merged_presentation, slide_data['title'], True, st.session_state.title_color, st.session_state.verse_color, st.session_state.title_font_size, st.session_state.verse_font_size, st.session_state.title_font, st.session_state.verse_font, st.session_state.background_image)
+                        slide_index += 1
                     
-                    # Create formatted slide
-                    create_formatted_slide(merged_presentation, text, is_title, st.session_state.title_color, st.session_state.verse_color, st.session_state.title_font_size, st.session_state.verse_font_size, st.session_state.title_font, st.session_state.verse_font, st.session_state.background_image)
-                    slide_index += 1
+                    # Create verse slide(s) if verses exist
+                    if slide_data['verses']:
+                        verses_text = '\n'.join(slide_data['verses'])
+                        create_formatted_slide(merged_presentation, verses_text, False, st.session_state.title_color, st.session_state.verse_color, st.session_state.title_font_size, st.session_state.verse_font_size, st.session_state.title_font, st.session_state.verse_font, st.session_state.background_image)
+                        slide_index += 1
         
         output = BytesIO()
         merged_presentation.save(output)
