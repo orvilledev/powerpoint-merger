@@ -164,6 +164,41 @@ def create_formatted_slide(target_presentation, text, is_title, title_color, ver
     
     return slide
 
+def create_template_powerpoint(title_color, verse_color, title_font_size, verse_font_size, title_font, verse_font, background_image=None):
+    """Create a PowerPoint template with 1 title slide and 1 verse slide"""
+    template_prs = Presentation()
+    
+    # Set slide dimensions to 16:9 Widescreen aspect ratio
+    template_prs.slide_width = Inches(13.33)
+    template_prs.slide_height = Inches(7.5)
+    
+    # Remove default empty slide
+    if template_prs.slides:
+        template_prs.slides.remove(template_prs.slides[0])
+    
+    # Create title slide
+    create_formatted_slide(template_prs, "YOUR TITLE HERE", True, title_color, verse_color, title_font_size, verse_font_size, title_font, verse_font, background_image)
+    
+    # Create verse slide
+    create_formatted_slide(template_prs, "Your verse text here\nYou can add multiple lines\nEach line will appear on the slide", False, title_color, verse_color, title_font_size, verse_font_size, title_font, verse_font, background_image)
+    
+    return template_prs
+
+def create_template_txt():
+    """Create a .txt template with TITLE: format"""
+    template_content = """TITLE: Your Title Here
+
+Your verse text here
+You can add multiple lines
+Each line will appear on the slide
+
+TITLE: Another Title (Optional)
+
+More verse text here
+Add as many titles and verses as you need
+Separate slides with blank lines"""
+    return template_content
+
 # Initialize session state for file ordering
 if 'file_order' not in st.session_state:
     st.session_state.file_order = []
@@ -241,6 +276,57 @@ with font_family_col1:
 with font_family_col2:
     verse_font = st.selectbox("Verse Font", COMMON_FONTS, index=COMMON_FONTS.index(st.session_state.verse_font) if st.session_state.verse_font in COMMON_FONTS else 0, key="verse_font_select")
     st.session_state.verse_font = verse_font
+
+st.markdown("## Download Templates")
+st.write("Download templates to get started. Edit them and upload back to the app.")
+col_template_pptx, col_template_txt = st.columns(2)
+
+with col_template_pptx:
+    # Generate template data
+    try:
+        template_prs = create_template_powerpoint(
+            st.session_state.title_color,
+            st.session_state.verse_color,
+            st.session_state.title_font_size,
+            st.session_state.verse_font_size,
+            st.session_state.title_font,
+            st.session_state.verse_font,
+            st.session_state.background_image
+        )
+        template_output = BytesIO()
+        template_prs.save(template_output)
+        template_output.seek(0)
+        pptx_template_data = template_output.getvalue()
+        
+        st.download_button(
+            label="📥 Download PowerPoint Template",
+            data=pptx_template_data,
+            file_name="powerpoint_template.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            key="download_pptx_template_file",
+            type="primary"
+        )
+    except Exception as e:
+        st.error(f"Error creating PowerPoint template: {str(e)}")
+
+with col_template_txt:
+    # Generate template data
+    try:
+        template_txt = create_template_txt()
+        txt_template_data = template_txt.encode('utf-8')
+        
+        st.download_button(
+            label="📥 Download Text Template",
+            data=txt_template_data,
+            file_name="text_template.txt",
+            mime="text/plain",
+            key="download_txt_template_file",
+            type="primary"
+        )
+    except Exception as e:
+        st.error(f"Error creating text template: {str(e)}")
+
+st.divider()
 
 st.markdown("## Upload PowerPoint Files")
 uploaded_files = st.file_uploader(
