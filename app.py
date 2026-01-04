@@ -31,7 +31,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 PowerPoint Merger")
+st.title("📊 PowerPoint Merger by OrvilleDev")
 
 def resize_image_to_1920x1080(image_bytes):
     """Resize image to 1920x1080 pixels"""
