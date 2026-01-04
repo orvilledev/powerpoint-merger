@@ -7,7 +7,7 @@ from pptx.dml.color import RGBColor
 from io import BytesIO
 from PIL import Image
 
-st.set_page_config(page_title="PowerPoint Merger", layout="centered")
+st.set_page_config(page_title="PowerPoint Merger by OrvilleDev", layout="centered")
 
 # Custom CSS to style file uploader buttons to red
 st.markdown("""
